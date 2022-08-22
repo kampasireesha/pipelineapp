@@ -1,0 +1,176 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "vnetprefix": {
+            "type": "string"
+        },
+        "sub1name": {
+            "type": "string"
+        },
+        "sub2name": {
+            "type": "string"
+        },
+        "pipprefix": {
+            "type": "string"
+        },
+        "dnsprefix": {
+            "type": "string"
+        }
+    },
+    "functions": [],
+    "variables": {
+     "vnetname": "[concat(parameters('vnetprefix'),uniqueString(resourceGroup().id))]",
+     "pubipname": "[concat(parameters('pipprefix'),uniqueString(resourceGroup().id))]",
+     "dnsname": "[concat(parameters('dnsprefix'),uniqueString(resourceGroup().id))]"
+    },
+    "resources": [
+         {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2020-11-01",
+            "location": "East US",
+            "name": "[variables('vnetname')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/16"
+                    ]
+                },
+                "subnets": [
+                    {
+                    "name": "[parameters('sub1name')]",
+                    "properties": {
+                        "addressPrefix": "10.0.0.0/29"
+                    }
+                    },
+                    {
+                        "name": "[parameters('sub2name')]",
+                        "properties": {
+                            "addressPrefix": "10.0.0.8/29"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "name": "[variables('pubipname')]",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2019-11-01",
+            "location": "[resourceGroup().location]",
+            "dependsOn": ["[resourceId('Microsoft.Network/virtualNetworks', variables('vnetname'))]"],
+            "properties": {
+                "publicIPAllocationMethod": "Dynamic",
+                "dnsSettings": {
+                    "domainNameLabel": "[variables('dnsname')]"
+                }
+            }
+        },
+     {
+         "type": "Microsoft.Network/applicationGateways",
+         "apiVersion": "2019-11-01",
+         "name": "myapgway1234",
+         "location": "[resourceGroup().location]",
+         "dependsOn": [
+             "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetname'))]",
+             "[resourceId('Microsoft.Network/publicIPAddresses', variables('pubipname'))]"
+         ],
+         "properties": {
+             "sku": {
+                 "name": "WAF_v2",
+                 "tier": "WAF_v2",
+                 "capacity": 2
+             },
+             "probes": [
+                  {
+                      "name": "healthprobemonitoring",
+                      "properties": {
+                          "path": "/",
+                          "port": 80,
+                          "protocol": "Http",
+                          "unhealthyThreshold":20,
+                          "pickHostNameFromBackendHttpSettings": true,
+                          "timeout": 120
+                      }
+                  }
+             ],
+             "gatewayIPConfigurations": [
+                 {
+                     "name": "appGatewayIpConfig",
+                     "properties": {
+                         "subnet": {
+                             "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetname'), parameters('sub1name'))]"
+                         }
+                     }
+                 }
+             ],
+             "frontendIPConfigurations": [
+                 {
+                     "name": "appGatewayFrontendIP",
+                     "properties": {
+                         "PublicIPAddress": {
+                             "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('pubipname'))]"
+                         }
+                     }
+                 }
+             ],
+             "frontendPorts": [
+                 {
+                     "name": "appGatewayFrontendPort",
+                     "properties": {
+                         "Port": 80
+                     }
+                 }
+             ],
+             "backendAddressPools": [
+                 {
+                     "name": "appGatewayBackendPool",
+                     "properties": {
+                     }
+                 }
+             ],
+             "backendHttpSettingsCollection": [
+                 {
+                     "name": "appGatewayBackendHttpSettings",
+                     "properties": {
+                         "Port": 80,
+                         "Protocol": "Http",
+                         "CookieBasedAffinity": "Disabled"
+                     }
+                 }
+             ],
+             "httpListeners": [
+                 {
+                     "name": "appGatewayHttpListener",
+                     "properties": {
+                         "FrontendIPConfiguration": {
+                             "Id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', 'applicationGatewayName', 'appGatewayFrontendIP')]"
+                         },
+                         "FrontendPort": {
+                             "Id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts',  'applicationGatewayName', 'appGatewayFrontendPort')]"
+                         },
+                         "Protocol": "Http"
+                     }
+                 }
+             ],
+             "requestRoutingRules": [
+                 {
+                     "Name": "ruleName",
+                     "properties": {
+                         "RuleType": "Basic",
+                         "httpListener": {
+                             "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', 'applicationGatewayName', 'appGatewayHttpListener')]"
+                         },
+                         "backendAddressPool": {
+                             "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', 'applicationGatewayName', 'appGatewayBackendPool')]"
+                         },
+                         "backendHttpSettings": {
+                             "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', 'applicationGatewayName', 'appGatewayBackendHttpSettings')]"
+                         }
+                     }
+                 }
+             ]
+         }
+     }
+    ],
+    "outputs": {}
+}
